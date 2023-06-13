@@ -53,8 +53,8 @@ def dimson_betas(excess_return : np.array, market_return : np.array, N=1) -> np.
     return np.array([fama_macbeth_beta(er,mr) for er,mr in zip(excess_return, np.array(lagged_market_return))]).sum(axis=1)
 
 
-def get_betas(excess_return : np.array, market_return : np.array, f, **kw)->np.array:
-    return np.array([f(er,mr, **kw) for er,mr in zip(excess_return, market_return)]).reshape(-1)
+def get_betas(excess_return: np.array, market_return: np.array, f, **kw) -> np.array:
+    return np.array([f(er, mr, **kw) for er, mr in zip(excess_return, market_return)]).reshape(-1)
 
 
 if __name__ == "__main__":
@@ -92,9 +92,9 @@ if __name__ == "__main__":
     factors = np.array(list(map(lambda x: x.T, np.array([[[4,3,3,1],[4,3,3,1]],[[4,3,3,1],[4,3,3,1]],[[4,3,3,1],[4,3,3,1]],[[4,3,3,1],[4,3,3,1]]]))))
 
 
-    X = market_return-risk_free
+    X = market_return - risk_free
     # X = np.concatenate([X, factors], axis=2)
-    y = portfolio_return-risk_free
+    y = portfolio_return - risk_free
 
     betas = get_betas(y, X, fama_macbeth_beta)
     print("FamaMacbeth Beta series ", betas)
