@@ -16,6 +16,9 @@ def download_data(symbol, postfix='.us') -> Optional[pd.DataFrame]:
     if data == 'Brak danych':
         print(f'No data found for {symbol}{postfix}')
         return None
+    if 'Przekroczony dzienny limit wywolan' in data:
+        print(f'Request limit reached for today!!! - {data}')
+        raise RuntimeError('Out of requests')
     return pd.read_csv(io.StringIO(data))
 
 
@@ -40,7 +43,10 @@ def main(index, limit, sleep_time):
         companies = companies.iloc[:limit]
 
     for company in tqdm(companies['Symbol']):
-        data = download_data(company)
+        if os.path.exists(f'data/{index}/history/{company}.csv'):
+            continue
+
+        data = download_data(company, postfix="")
 
         summaries.append({
             'symbol': company,
