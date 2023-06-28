@@ -10,7 +10,9 @@ from sklearn.model_selection import TimeSeriesSplit
 from sklearn.model_selection import RandomizedSearchCV
 from sklearn.metrics import mean_absolute_error, make_scorer
 from tqdm import tqdm
+from sklearn.linear_model import LinearRegression, Ridge
 
+from betas import fama_macbeth_beta, shrinkage_beta, dimson_beta
 
 class FinancialEstimator:
     def __init__(self, sup_func):
@@ -25,9 +27,15 @@ class FinancialEstimator:
         return self._fun(excess_return, market_return)
 
 
-def eval_beta(df, window, stock='stock_yearly_return', market='market_yearly_return'):
-    cov = df[[stock, market]].rolling(window).cov()
-    return cov.xs(market, level=1)[stock] / cov.xs(market, level=1)[market]
+# def eval_beta(df:pd.DataFrame, window, stock='stock_yearly_return', market='market_yearly_return'):
+#     cov = df[[stock, market]].rolling(window).cov()
+#     return cov.xs(market, level=1)[stock] / cov.xs(market, level=1)[market]
+
+def eval_beta(df:pd.DataFrame, window, stock='stock_yearly_return', market='market_yearly_return', beta_func=fama_macbeth_beta):
+    windows = pd.Series([window for window in df[[stock, market]].rolling(window)])
+    windows = windows.apply(lambda x: x.fillna(np.random.normal(0.1,0.1)) + 1e-8)
+    
+    return np.array([beta_func(window[stock].to_numpy().reshape(-1,1), window[market].to_numpy().reshape(-1,1)) for window in windows])
 
 
 def optimize_model(
@@ -63,6 +71,7 @@ def build_x_y(data, input_columns, lag_size, y_col='beta'):
     for idx, col_name in enumerate(input_columns):
         for lag_idx in range(1, lag_size+1):
             col = data[col_name].shift(lag_idx)
+            col.name = f"{col_name}_{lag_idx}"
             cols.append(col)
 
     return pd.concat([X] + cols, axis=1)
@@ -128,13 +137,29 @@ def run_experiment(
     :param greater_is_better: If true, higher metric is better
     :return:
     """
-    scores = []
 
     data = data[['stock_yearly_return', 'market_yearly_return', 'risk_free_return', 'date']]
     data.loc[:, 'beta'] = eval_beta(data, beta_corr_window)
     X = build_x_y(data, input_columns, lag_size, 'beta')
     X = X.dropna()
     X, y = X.drop(columns='y'), X['y']
+
+    return _run_experiment(estimator, X, y, param_dist, opt_samples, split_size, cv_outer_splits, cv_inner_splits, scoring, greater_is_better)
+
+
+def _run_experiment(        
+        estimator,
+        X,
+        y,
+        param_dist,
+        opt_samples: int = 100,
+        split_size: int = 1,
+        cv_outer_splits: int = (5 * 12),
+        cv_inner_splits: int = 12,
+        scoring=mean_absolute_error,
+        greater_is_better=True):
+    
+    scores = []
 
     n_splits = (len(X.index) // split_size) - 1
     train_size = split_size * cv_outer_splits
@@ -148,7 +173,7 @@ def run_experiment(
         X_train, X_test = X.iloc[train_indices], X.iloc[test_indices]
         y_train, y_test = y.iloc[train_indices], y.iloc[test_indices]
 
-        print(f'Running fold {X_train.index.min()} - {X_test.index.max()}')
+        # print(f'Running fold {X_train.index.min()} - {X_test.index.max()}')
         start = time()
 
         best_model = optimize_model(
@@ -167,6 +192,47 @@ def run_experiment(
 
         end = time()
 
-        print(f'Fold score: {scores[-1]:.2}, time: {end - start:.2}s')
+        # print(f'Fold score: {scores[-1]:.2}, time: {end - start:.2}s')
 
     return np.mean(scores), np.std(scores)
+
+
+def run_tests(        
+        betas, 
+        estimators,
+        scorings,
+        data,
+        input_columns=['beta'],
+        lag_size: int = 365 * 5,
+        opt_samples: int = 100,
+        split_size: int = 1,
+        cv_outer_splits: int = (5 * 12),
+        cv_inner_splits: int = 12,
+        beta_corr_window: int = (5 * 12),
+        ):
+    import pickle
+    
+    results = []
+    for beta_fnc in betas:    
+        data = data[['stock_yearly_return', 'market_yearly_return', 'risk_free_return', 'date']]
+        data.loc[:, 'beta'] = eval_beta(data, beta_corr_window, beta_func=beta_fnc)
+        X = build_x_y(data, input_columns, lag_size, 'beta')
+        X = X.dropna()
+        X, y = X.drop(columns='y'), X['y']
+        for estimator, param_dist in estimators:
+            for scoring, greater_is_better in scorings:
+                print(f"Running: {beta_fnc.__name__, estimator.__class__.__name__, scoring.__name__}")
+                path = f"result_files/{str([beta_fnc.__name__, estimator.__class__.__name__, scoring.__name__])}.pickle"
+                if os.path.exists(path):
+                    with open(path, "rb") as file:
+                        print(f"Loaded from file: {path}")
+                        result = pickle.load(file)
+                else:
+                    result = _run_experiment(estimator, X, y, param_dist, opt_samples, split_size, cv_outer_splits, cv_inner_splits, scoring, greater_is_better)
+                    with open(path, "wb") as file:
+                        pickle.dump(result, file)
+                print(f"Scores: {result}")
+                results.append([beta_fnc.__name__, estimator.__class__.__name__, scoring.__name__,  *result])
+                
+    results_df = pd.DataFrame(results, columns=["Beta_func", "Estimator", "Scoring", "Mean", "Std"]) 
+    results_df.to_csv("result_files/results_all.csv")

@@ -52,6 +52,8 @@ def dimson_betas(excess_return : np.array, market_return : np.array, N=1) -> np.
 
     return np.array([fama_macbeth_beta(er,mr) for er,mr in zip(excess_return, np.array(lagged_market_return))]).sum(axis=1)
 
+def dimson_beta(excess_return : np.array, market_return : np.array) -> np.array:
+    return np.array([fama_macbeth_beta(excess_return[:lag+1],market_return[:lag+1]) for lag in range(excess_return.shape[0])]).mean(axis=0)
 
 def get_betas(excess_return: np.array, market_return: np.array, f, **kw) -> np.array:
     return np.array([f(er, mr, **kw) for er, mr in zip(excess_return, market_return)]).reshape(-1)
@@ -78,7 +80,9 @@ if __name__ == "__main__":
     print("Shrinkage Beta ",beta)
     beta = shrinkage_beta_sm(y,X)
     print("Shrinkage Beta (statmodels) ", beta)
-
+    beta = dimson_beta(y,X)
+    print("Dimson Beta", beta)
+    
     # computing series of beta
     portfolio_return = np.array([[1,2,1,4],[2,1,4,5],[3,4,4,1],[3,4,4,1]])
     portfolio_return = portfolio_return.reshape(portfolio_return.shape[0],-1, 1)
