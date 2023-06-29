@@ -14,10 +14,11 @@ from prophet import Prophet
 from prophet.diagnostics import cross_validation, performance_metrics
 from sklearn.linear_model import LinearRegression, Ridge
 from sklearn.model_selection._search import ParameterSampler
+from statsmodels.tsa.arima.model import ARIMA
 
 from betas import fama_macbeth_beta, shrinkage_beta, dimson_beta
 
-RAW_MODELS = [Prophet]
+RAW_MODELS = [Prophet, ARIMA]
 
 
 class FinancialEstimator:
@@ -157,6 +158,57 @@ def run_experiment(
     return _run_experiment_with_lag(estimator, X, y, param_dist, opt_samples, split_size, cv_outer_splits, cv_inner_splits, scoring, greater_is_better)
 
 
+def cv_arima(
+        data,
+        params,
+        split_size,
+        cv_inner_splits,
+        scoring):
+
+    train_size = cv_inner_splits * split_size
+    folds = TimeSeriesSplit(max_train_size=train_size, n_splits=cv_inner_splits).split(data)
+    folds = [(train_ind, test_ind) for train_ind, test_ind in folds if len(train_ind) == train_size]
+    scores = []
+
+
+    for train_ind, test_ind in folds:
+        train_y = data.iloc[train_ind]
+        test_y = data.iloc[test_ind]
+
+        model = ARIMA(train_y['y'], **params).fit()
+
+        y_pred = model.predict(start=test_y.index[0], end=test_y.index[-1])
+        scores.append(scoring(y_pred, test_y['y']))
+
+    return np.mean(scores)
+
+
+
+def prepare_and_eval_arima(
+        train_data,
+        test_data,
+        param_dist,
+        opt_samples,
+        split_size,
+        cv_inner_splits,
+        scoring,
+        greater_is_better):
+
+    best_model_params = None
+    best_model_score = -np.inf if greater_is_better else np.inf
+
+    for params in ParameterSampler(param_dist, opt_samples):
+        score = cv_arima(train_data, params, split_size, cv_inner_splits, scoring)
+        if (score > best_model_score and greater_is_better) or \
+           (score < best_model_score and not greater_is_better):
+            best_model_score = score
+            best_model_params = params
+
+    model = ARIMA(train_data['y'], **best_model_params).fit()
+    y_pred = model.predict(start=test_data.index[0], end=test_data.index[-1])
+    return scoring(y_pred, test_data['y'])
+
+
 def prepare_and_eval_prophet(
         train_data,
         test_data,
@@ -169,7 +221,7 @@ def prepare_and_eval_prophet(
 
     train_size = cv_inner_splits * split_size
     best_model = None
-    best_model_score =  99999999999
+    best_model_score = 99999999999
 
     for params in ParameterSampler(param_dist, opt_samples):
         model = Prophet(**params).fit(train_data)
@@ -223,6 +275,10 @@ def _run_experiment_raw(
 
         if isinstance(estimator, Prophet):
             scores.append(prepare_and_eval_prophet(
+                data_train, data_test, param_dist,
+                opt_samples, split_size, cv_inner_splits, scoring, greater_is_better))
+        elif isinstance(estimator, ARIMA):
+            scores.append(prepare_and_eval_arima(
                 data_train, data_test, param_dist,
                 opt_samples, split_size, cv_inner_splits, scoring, greater_is_better))
 
