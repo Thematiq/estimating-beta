@@ -10,9 +10,15 @@ from sklearn.model_selection import TimeSeriesSplit
 from sklearn.model_selection import RandomizedSearchCV
 from sklearn.metrics import mean_absolute_error, make_scorer
 from tqdm import tqdm
+from prophet import Prophet
+from prophet.diagnostics import cross_validation, performance_metrics
 from sklearn.linear_model import LinearRegression, Ridge
+from sklearn.model_selection._search import ParameterSampler
 
 from betas import fama_macbeth_beta, shrinkage_beta, dimson_beta
+
+RAW_MODELS = [Prophet]
+
 
 class FinancialEstimator:
     def __init__(self, sup_func):
@@ -148,10 +154,82 @@ def run_experiment(
     X = X.dropna()
     X, y = X.drop(columns='y'), X['y']
 
-    return _run_experiment(estimator, X, y, param_dist, opt_samples, split_size, cv_outer_splits, cv_inner_splits, scoring, greater_is_better)
+    return _run_experiment_with_lag(estimator, X, y, param_dist, opt_samples, split_size, cv_outer_splits, cv_inner_splits, scoring, greater_is_better)
 
 
-def _run_experiment(        
+def prepare_and_eval_prophet(
+        train_data,
+        test_data,
+        param_dist,
+        opt_samples,
+        split_size,
+        cv_inner_splits,
+        scoring,
+        greater_is_better):
+
+    train_size = cv_inner_splits * split_size
+    best_model = None
+    best_model_score =  99999999999
+
+    for params in ParameterSampler(param_dist, opt_samples):
+        model = Prophet(**params).fit(train_data)
+        df_cv = cross_validation(model, initial=f'{train_size} days', period=f'{split_size} days',
+                                 horizon=f'{split_size} days')
+        df_p = performance_metrics(df_cv, rolling_window=1)
+        score = df_p['mae'].values[0]
+
+        if score < best_model_score:
+            best_model_score = score
+            best_model = model
+
+    y = test_data['y'].values
+    future = best_model.make_future_dataframe(periods=y.shape[0])
+    forecast = best_model.predict(future)['yhat'].values[-y.shape[0]:]
+
+    return scoring(forecast, y)
+
+
+def _run_experiment_raw(
+        estimator,
+        data,
+        param_dist,
+        opt_samples: int = 100,
+        split_size: int = 1,
+        cv_outer_splits: int = (5 * 12),
+        cv_inner_splits: int = 12,
+        scoring=mean_absolute_error,
+        greater_is_better=True,
+        predicted_val='beta',
+        limit_outer_folds=None):
+    scores = []
+
+    prophet_data = pd.DataFrame(data={
+        'y': data[predicted_val],
+        'ds': data['date']
+    })
+
+    n_splits = (len(data.index) // split_size) - 1
+    train_size = split_size * cv_outer_splits
+
+    folds = TimeSeriesSplit(max_train_size=train_size, n_splits=n_splits).split(prophet_data)
+    folds = [(train_ind, test_ind) for train_ind, test_ind in folds if len(train_ind) == train_size]
+
+    if limit_outer_folds is not None:
+        folds = folds[:limit_outer_folds]
+
+    for train_indices, test_indices in tqdm(folds):
+        data_train = prophet_data.iloc[train_indices]
+        data_test = prophet_data.iloc[test_indices]
+
+        if isinstance(estimator, Prophet):
+            scores.append(prepare_and_eval_prophet(
+                data_train, data_test, param_dist,
+                opt_samples, split_size, cv_inner_splits, scoring, greater_is_better))
+
+    return np.mean(scores), np.std(scores)
+
+
+def _run_experiment_with_lag(
         estimator,
         X,
         y,
@@ -161,7 +239,8 @@ def _run_experiment(
         cv_outer_splits: int = (5 * 12),
         cv_inner_splits: int = 12,
         scoring=mean_absolute_error,
-        greater_is_better=True):
+        greater_is_better=True,
+        limit_outer_folds=None):
     
     scores = []
 
@@ -170,6 +249,8 @@ def _run_experiment(
 
     folds = TimeSeriesSplit(max_train_size=train_size, n_splits=n_splits).split(X)
     folds = [(train_ind, test_ind) for train_ind, test_ind in folds if len(train_ind) == train_size]
+    if limit_outer_folds is not None:
+        folds = folds[:limit_outer_folds]
 
     for train_indices, test_indices in tqdm(folds):
         if len(train_indices) < train_size:
@@ -214,6 +295,7 @@ def run_tests(
         cv_outer_splits: int = (5 * 12),
         cv_inner_splits: int = 12,
         beta_corr_window: int = (5 * 12),
+        limit_outer_folds=None
         ):
     import pickle
     
@@ -237,7 +319,12 @@ def run_tests(
                         print(f"Loaded from file: {path}")
                         result = pickle.load(file)
                 else:
-                    result = _run_experiment(estimator, X, y, param_dist, opt_samples, split_size, cv_outer_splits, cv_inner_splits, scoring, greater_is_better)
+                    if any([isinstance(estimator, x) for x in RAW_MODELS]):
+                        result = _run_experiment_raw(estimator, data, param_dist, opt_samples, split_size, cv_outer_splits,
+                                                     cv_inner_splits, scoring, greater_is_better, 'beta', limit_outer_folds)
+                    else:
+                        result = _run_experiment_with_lag(estimator, X, y, param_dist, opt_samples, split_size, cv_outer_splits,
+                                                          cv_inner_splits, scoring, greater_is_better, limit_outer_folds)
                     with open(path, "wb") as file:
                         pickle.dump(result, file)
                 print(f"Scores: {result}")

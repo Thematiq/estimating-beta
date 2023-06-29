@@ -5,6 +5,7 @@ from xgboost import XGBRegressor
 from sklearn.linear_model import LinearRegression
 from betas import fama_macbeth_beta, shrinkage_beta, dimson_beta
 from esn import ESN, WeightInitializer, CompositeInitializer, A
+from prophet import Prophet
 
 import warnings
 warnings.filterwarnings("ignore")
@@ -44,20 +45,24 @@ if __name__ == '__main__':
         #     'max_depth': [5,10]
         #     }
         # ],
+        # [
+        #     ESN(input_size=INPUT_SIZE, initializer=esn_initializer),
+        #     {
+        #     'input_size': [INPUT_SIZE],
+        #     'hidden_size': [50, 200, 500],
+        #     'output_dim': [1],
+        #     'bias': [False],
+        #     'initializer': [esn_initializer],
+        #     'num_layers': [2, 3],
+        #     'activation': [A.self_normalizing_default()],
+        #     'washout': [0],
+        #     'regularization': [1]
+        #     }
+        # ],
         [
-            ESN(input_size=INPUT_SIZE, initializer=esn_initializer),
-            {
-            'input_size': [INPUT_SIZE],
-            'hidden_size': [50, 200, 500],
-            'output_dim': [1],
-            'bias': [False],
-            'initializer': [esn_initializer],
-            'num_layers': [2, 3],
-            'activation': [A.self_normalizing_default()],
-            'washout': [0],
-            'regularization': [1]
-            }
-        ],
+            Prophet(),
+            {}
+        ]
         # [
         #     XGBRegressor(),
         #     {
@@ -66,7 +71,7 @@ if __name__ == '__main__':
         #     }
         # ]
         ]
-    scorings = [[mean_absolute_error, False], [r2_score, True]]
+    scorings = [[r2_score, True]]
 
     run_tests(betas,
         estimators,
@@ -75,7 +80,8 @@ if __name__ == '__main__':
         input_columns=['beta'],
         lag_size=INPUT_SIZE,
         split_size=7,
-        opt_samples=3)
+        opt_samples=3,
+        limit_outer_folds=10)
 
 
     # run_experiment(
