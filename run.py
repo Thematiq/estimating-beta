@@ -45,24 +45,24 @@ if __name__ == '__main__':
         #     'max_depth': [5,10]
         #     }
         # ],
-        # [
-        #     ESN(input_size=INPUT_SIZE, initializer=esn_initializer),
-        #     {
-        #     'input_size': [INPUT_SIZE],
-        #     'hidden_size': [50, 200, 500],
-        #     'output_dim': [1],
-        #     'bias': [False],
-        #     'initializer': [esn_initializer],
-        #     'num_layers': [2, 3],
-        #     'activation': [A.self_normalizing_default()],
-        #     'washout': [0],
-        #     'regularization': [1]
-        #     }
-        # ],
         [
-            Prophet(),
-            {}
-        ]
+            ESN(input_size=INPUT_SIZE, initializer=esn_initializer),
+            {
+            'input_size': [INPUT_SIZE],
+            'hidden_size': [500],
+            'output_dim': [1],
+            'bias': [False],
+            'initializer': [esn_initializer],
+            'num_layers': [1],
+            'activation': [A.self_normalizing_default()],
+            'washout': [0],
+            'regularization': [1]
+            }
+        ],
+        # [
+        #     Prophet(),
+        #     {}
+        # ]
         # [
         #     XGBRegressor(),
         #     {

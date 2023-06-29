@@ -301,13 +301,13 @@ def run_tests(
     
     results = []
     for beta_fnc in betas:    
-        data = data[['stock_yearly_return', 'market_yearly_return', 'risk_free_return', 'date']]
+        new_data = data[['stock_yearly_return', 'market_yearly_return', 'risk_free_return', 'date']]
         # Insert data only for rows with proper beta
         # beta_corr_window due to corr window, and 365 due to yearly return
-        data.loc[data.index[beta_corr_window + 365:], 'beta'] = eval_beta(data, beta_corr_window, beta_func=beta_fnc)
+        new_data.loc[new_data.index[beta_corr_window + 365:], 'beta'] = eval_beta(new_data, beta_corr_window, beta_func=beta_fnc)
         # And them remove missing rows
-        data = data.dropna()
-        X = build_x_y(data, input_columns, lag_size, 'beta')
+        new_data = new_data.dropna()
+        X = build_x_y(new_data, input_columns, lag_size, 'beta')
         X = X.dropna()
         X, y = X.drop(columns='y'), X['y']
         for estimator, param_dist in estimators:
@@ -320,7 +320,7 @@ def run_tests(
                         result = pickle.load(file)
                 else:
                     if any([isinstance(estimator, x) for x in RAW_MODELS]):
-                        result = _run_experiment_raw(estimator, data, param_dist, opt_samples, split_size, cv_outer_splits,
+                        result = _run_experiment_raw(estimator, new_data, param_dist, opt_samples, split_size, cv_outer_splits,
                                                      cv_inner_splits, scoring, greater_is_better, 'beta', limit_outer_folds)
                     else:
                         result = _run_experiment_with_lag(estimator, X, y, param_dist, opt_samples, split_size, cv_outer_splits,
