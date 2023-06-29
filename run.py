@@ -18,6 +18,8 @@ if __name__ == '__main__':
     # .uniform()\
     # .regular_graph(4)\
     # .scale(0.9)\
+
+    INPUT_SIZE = 365
     
     esn_initializer = WeightInitializer()
     esn_initializer.weight_hh_init = i
@@ -29,50 +31,50 @@ if __name__ == '__main__':
     )
     betas = [fama_macbeth_beta, shrinkage_beta, dimson_beta]
     estimators =  [
-        [
-            LinearRegression(),
-            {
-                'fit_intercept' : [True]
-            }
-        ],
-        [
-            RandomForestRegressor( random_state=42), 
-            {
-            'n_estimators': [10, 100],
-            'max_depth': [5,10]
-            }
-        ],
         # [
-        #     ESN(input_size=21, initializer=esn_initializer),
+        #     LinearRegression(),
         #     {
-        #     'input_size': [21],
-        #     'hidden_size': [50, 200, 500],
-        #     'output_dim': [1],
-        #     'bias': [False],
-        #     'initializer': [esn_initializer],
-        #     'num_layers': [2, 3],
-        #     'activation': [A.self_normalizing_default()],
-        #     'washout': [0],
-        #     'regularization': [1]
+        #         'fit_intercept' : [True]
+        #     }
+        # ],
+        # [
+        #     RandomForestRegressor( random_state=42),
+        #     {
+        #     'n_estimators': [10, 100],
+        #     'max_depth': [5,10]
         #     }
         # ],
         [
-            XGBRegressor(),
+            ESN(input_size=INPUT_SIZE, initializer=esn_initializer),
             {
-            'n_estimators': [10, 100],
-            'max_depth': [5,10]
+            'input_size': [INPUT_SIZE],
+            'hidden_size': [50, 200, 500],
+            'output_dim': [1],
+            'bias': [False],
+            'initializer': [esn_initializer],
+            'num_layers': [2, 3],
+            'activation': [A.self_normalizing_default()],
+            'washout': [0],
+            'regularization': [1]
             }
+        ],
+        # [
+        #     XGBRegressor(),
+        #     {
+        #     'n_estimators': [10, 100],
+        #     'max_depth': [5,10]
+        #     }
+        # ]
         ]
-        ]
-    scorings = [[mean_absolute_error, True], [r2_score, True]]
+    scorings = [[mean_absolute_error, False], [r2_score, True]]
 
     run_tests(betas,
         estimators,
         scorings,
         data,
         input_columns=['beta'],
-        lag_size=21,
-        split_size=5,
+        lag_size=INPUT_SIZE,
+        split_size=7,
         opt_samples=3)
 
 

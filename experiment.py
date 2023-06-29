@@ -32,8 +32,11 @@ class FinancialEstimator:
 #     return cov.xs(market, level=1)[stock] / cov.xs(market, level=1)[market]
 
 def eval_beta(df:pd.DataFrame, window, stock='stock_yearly_return', market='market_yearly_return', beta_func=fama_macbeth_beta):
-    windows = pd.Series([window for window in df[[stock, market]].rolling(window)])
-    windows = windows.apply(lambda x: x.fillna(np.random.normal(0.1,0.1)) + 1e-8)
+    # Drop missing value due to yearly returns
+    df = df.dropna()
+    # Skip windows with size < window
+    windows = [window for window in df[[stock, market]].rolling(window)][window:]
+    # windows = windows.apply(lambda x: x.fillna(np.random.normal(0.1,0.1)) + 1e-8)
     
     return np.array([beta_func(window[stock].to_numpy().reshape(-1,1), window[market].to_numpy().reshape(-1,1)) for window in windows])
 
@@ -50,14 +53,15 @@ def optimize_model(
     n_splits = (len(X.index) // split_size) - 1
     train_size = train_splits * split_size
 
-    folds = TimeSeriesSplit(max_train_size=train_size, n_splits=n_splits)
+    folds = TimeSeriesSplit(max_train_size=train_size, n_splits=n_splits).split(X)
+    folds = [(train_ind, test_ind) for train_ind, test_ind in folds if len(train_ind) == train_size]
 
     return RandomizedSearchCV(
         estimator,
         param_distributions=params_dist,
         n_iter=opt_samples,
         refit=True,
-        cv=folds.split(X),
+        cv=folds,
         scoring=make_scorer(scoring, greater_is_better=greater_is_better)
     ).fit(X, y).best_estimator_
 
@@ -164,9 +168,10 @@ def _run_experiment(
     n_splits = (len(X.index) // split_size) - 1
     train_size = split_size * cv_outer_splits
 
-    folds = TimeSeriesSplit(max_train_size=train_size, n_splits=n_splits)
+    folds = TimeSeriesSplit(max_train_size=train_size, n_splits=n_splits).split(X)
+    folds = [(train_ind, test_ind) for train_ind, test_ind in folds if len(train_ind) == train_size]
 
-    for train_indices, test_indices in tqdm(folds.split(X)):
+    for train_indices, test_indices in tqdm(folds):
         if len(train_indices) < train_size:
             continue
 
@@ -215,7 +220,11 @@ def run_tests(
     results = []
     for beta_fnc in betas:    
         data = data[['stock_yearly_return', 'market_yearly_return', 'risk_free_return', 'date']]
-        data.loc[:, 'beta'] = eval_beta(data, beta_corr_window, beta_func=beta_fnc)
+        # Insert data only for rows with proper beta
+        # beta_corr_window due to corr window, and 365 due to yearly return
+        data.loc[data.index[beta_corr_window + 365:], 'beta'] = eval_beta(data, beta_corr_window, beta_func=beta_fnc)
+        # And them remove missing rows
+        data = data.dropna()
         X = build_x_y(data, input_columns, lag_size, 'beta')
         X = X.dropna()
         X, y = X.drop(columns='y'), X['y']
