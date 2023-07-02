@@ -2,9 +2,9 @@ import numpy as np
 
 from experiment import run_experiment, build_data, run_tests
 from sklearn.ensemble import RandomForestRegressor
-from sklearn.metrics import r2_score, mean_absolute_error, mean_absolute_percentage_error
+from sklearn.metrics import r2_score, mean_absolute_error, mean_absolute_percentage_error, mean_squared_error
 from xgboost import XGBRegressor
-from sklearn.linear_model import LinearRegression
+from sklearn.linear_model import LinearRegression, Ridge
 from betas import fama_macbeth_beta, shrinkage_beta, dimson_beta
 from esn import ESN, WeightInitializer, CompositeInitializer, A
 from prophet import Prophet
@@ -38,49 +38,47 @@ if __name__ == '__main__':
     betas = [fama_macbeth_beta, shrinkage_beta, dimson_beta]
     estimators =  [
         [
+            Ridge(alpha=1.0),
+            {}
+        ],
+        [
             LinearRegression(),
             {
                 'fit_intercept': [True]
             }
         ],
-        # [
-        #     RandomForestRegressor( random_state=42),
-        #     {
-        #     'n_estimators': [100, 200, 500],
-        #     'max_depth': [5, 10]
-        #     }
-        # ],
-        # [
-        #     ESN(input_size=INPUT_SIZE, initializer=esn_initializer),
-        #     {
-        #     'input_size': [INPUT_SIZE],
-        #     'hidden_size': [500],
-        #     'output_dim': [1],
-        #     'bias': [False],
-        #     'initializer': [esn_initializer],
-        #     'num_layers': [1],
-        #     'activation': [A.self_normalizing_default()],
-        #     'washout': [0],
-        #     'regularization': [1]
-        #     }
-        # ],
+
+        [
+            ESN(input_size=INPUT_SIZE, initializer=esn_initializer),
+            {
+            'input_size': [INPUT_SIZE],
+            'hidden_size': [500, 700],
+            'output_dim': [1],
+            'bias': [False],
+            'initializer': [esn_initializer],
+            'num_layers': [1, 2, 3],
+            'activation': [A.self_normalizing_default()],
+            'washout': [0],
+            'regularization': [1]
+            }
+        ],
         [
             ARIMA(np.ones(3)),
             {}
         ],
-        # [
-        #     Prophet(),
-        #     {}
-        # ]
-        # [
-        #     XGBRegressor(),
-        #     {
-        #     'n_estimators': [10, 100],
-        #     'max_depth': [5,10]
-        #     }
-        # ]
+        [
+            Prophet(),
+            {}
+        ],
+        [
+            XGBRegressor(),
+            {
+            'n_estimators': [10, 100],
+            'max_depth': [5,10]
+            }
         ]
-    scorings = [[mean_absolute_percentage_error, False], [mean_absolute_error, False], [r2_score, True]]
+    ]
+    scorings = [[mean_absolute_percentage_error, False], [mean_absolute_error, False] [r2_score, True]]
 
     # Long scenario
     # run_tests(betas,
@@ -107,8 +105,8 @@ if __name__ == '__main__':
         cv_outer_splits=(5 * 12),
         cv_inner_splits=(4 * 12),
         beta_corr_window=(365 * 5),
-        opt_samples=3,
-        limit_outer_folds=10)
+        opt_samples=1,
+        limit_outer_folds=100)
 
 
     # run_experiment(
